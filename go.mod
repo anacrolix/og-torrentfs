@@ -103,4 +103,4 @@ require (
 
 // Replace with the local torrent checkout during development until a release
 // including torrent/fs/torrentfstest is published.
-replace github.com/anacrolix/torrent => /tmp/torrent-fuse-build
+replace github.com/anacrolix/torrent => ../torrent
