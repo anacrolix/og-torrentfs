@@ -34,6 +34,7 @@ type MountFunc func(t testing.TB, tfs *torrentfs.TorrentFS, mountDir string) (un
 func RunTestSuite(t *testing.T, mount MountFunc) {
 	t.Run("UnmountWedged", func(t *testing.T) { testUnmountWedged(t, mount) })
 	t.Run("DownloadOnDemand", func(t *testing.T) { testDownloadOnDemand(t, mount) })
+	t.Run("StreamSintel", func(t *testing.T) { testStreamSintel(t, mount) })
 }
 
 // layout holds temporary directories for a test.
