@@ -10,7 +10,7 @@ require (
 	github.com/anacrolix/log v0.17.1-0.20251118025802-918f1157b7bb
 	github.com/anacrolix/missinggo/v2 v2.10.0
 	github.com/anacrolix/tagflag v1.3.0
-	github.com/anacrolix/torrent v1.61.1-0.20260310060900-17e1ab06d54b
+	github.com/anacrolix/torrent v1.61.1-0.20260310095357-309f562daae4
 )
 
 require (
@@ -100,4 +100,3 @@ require (
 	modernc.org/sqlite v1.21.1 // indirect
 	zombiezen.com/go/sqlite v0.13.1 // indirect
 )
-
