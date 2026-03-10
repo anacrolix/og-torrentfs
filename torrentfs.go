@@ -7,13 +7,11 @@ package ogtorrentfs
 
 import (
 	"context"
-	"io"
+	"errors"
 	"os"
-	"strings"
 
 	"github.com/anacrolix/fuse"
 	fusefs "github.com/anacrolix/fuse/fs"
-	"github.com/anacrolix/missinggo/v2"
 
 	"github.com/anacrolix/torrent"
 	torrentfs "github.com/anacrolix/torrent/fs"
@@ -102,32 +100,26 @@ func (rn rootNode) Attr(ctx context.Context, attr *fuse.Attr) error {
 }
 
 func (rn rootNode) Lookup(ctx context.Context, name string) (fusefs.Node, error) {
-	for _, t := range rn.tfs.Client.Torrents() {
-		info := t.Info()
-		if t.Name() != name || info == nil {
-			continue
-		}
-		n := node{tfs: rn.tfs, t: t}
-		if !info.IsDir() {
-			return fileNode{node: n, f: t.Files()[0]}, nil
-		}
-		return dirNode{node: n}, nil
+	result, ok := torrentfs.RootLookup(rn.tfs, name)
+	if !ok {
+		return nil, fuse.ENOENT //nolint:staticcheck
 	}
-	return nil, fuse.ENOENT //nolint:staticcheck
+	n := node{tfs: rn.tfs, t: result.Torrent}
+	if !result.IsDir {
+		return fileNode{node: n, f: result.File}, nil
+	}
+	return dirNode{node: n}, nil
 }
 
 func (rn rootNode) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
-	var des []fuse.Dirent
-	for _, t := range rn.tfs.Client.Torrents() {
-		info := t.Info()
-		if info == nil {
-			continue
-		}
+	entries := torrentfs.RootEntries(rn.tfs)
+	des := make([]fuse.Dirent, len(entries))
+	for i, e := range entries {
 		dt := fuse.DT_Dir
-		if !info.IsDir() {
+		if !e.IsDir {
 			dt = fuse.DT_File
 		}
-		des = append(des, fuse.Dirent{Name: info.BestName(), Type: dt})
+		des[i] = fuse.Dirent{Name: e.Name, Type: dt}
 	}
 	return des, nil
 }
@@ -148,63 +140,27 @@ func (dn dirNode) Attr(ctx context.Context, attr *fuse.Attr) error {
 }
 
 func (dn dirNode) Lookup(_ context.Context, name string) (fusefs.Node, error) {
-	var fullPath string
-	if dn.path != "" {
-		fullPath = dn.path + "/" + name
-	} else {
-		fullPath = name
-	}
-	dir := false
-	var file *torrent.File
-	for _, f := range dn.t.Files() {
-		if f.DisplayPath() == fullPath {
-			file = f
-		}
-		if torrentfs.IsSubPath(fullPath, f.DisplayPath()) {
-			dir = true
-		}
+	result, ok := torrentfs.DirLookup(dn.t, dn.path, name)
+	if !ok {
+		return nil, fuse.ENOENT //nolint:staticcheck
 	}
 	n := dn.node
-	n.path = fullPath
-	if dir && file != nil {
-		panic("both dir and file")
+	n.path = result.Path
+	if !result.IsDir {
+		return fileNode{node: n, f: result.File}, nil
 	}
-	if file != nil {
-		return fileNode{node: n, f: file}, nil
-	}
-	if dir {
-		return dirNode{node: n}, nil
-	}
-	return nil, fuse.ENOENT //nolint:staticcheck
+	return dirNode{node: n}, nil
 }
 
 func (dn dirNode) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
-	info := dn.t.Info()
-	names := map[string]bool{}
-	var des []fuse.Dirent
-	for _, fi := range info.UpvertedFiles() {
-		filePathname := strings.Join(fi.BestPath(), "/")
-		if !torrentfs.IsSubPath(dn.path, filePathname) {
-			continue
+	entries := torrentfs.DirEntries(dn.t, dn.path)
+	des := make([]fuse.Dirent, len(entries))
+	for i, e := range entries {
+		dt := fuse.DT_Dir
+		if !e.IsDir {
+			dt = fuse.DT_File
 		}
-		var name string
-		if dn.path == "" {
-			name = fi.BestPath()[0]
-		} else {
-			dirPathname := strings.Split(dn.path, "/")
-			name = fi.BestPath()[len(dirPathname)]
-		}
-		if names[name] {
-			continue
-		}
-		names[name] = true
-		de := fuse.Dirent{Name: name}
-		if len(fi.BestPath()) == len(dn.path)+1 {
-			de.Type = fuse.DT_File
-		} else {
-			de.Type = fuse.DT_Dir
-		}
-		des = append(des, de)
+		des[i] = fuse.Dirent{Name: e.Name, Type: dt}
 	}
 	return des, nil
 }
@@ -244,44 +200,16 @@ func (me fileHandle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse
 	if req.Dir {
 		panic("read on directory")
 	}
-	r := me.tf.NewReader()
-	defer r.Close()
-	pos, err := r.Seek(req.Offset, io.SeekStart)
-	if err != nil {
-		panic(err)
-	}
-	if pos != req.Offset {
-		panic("seek failed")
-	}
 	resp.Data = resp.Data[:req.Size]
-	readDone := make(chan struct{})
-	ctx, cancel := context.WithCancel(ctx)
-	var readErr error
-	doneFn := me.fn.tfs.TrackBlockedRead()
-	go func() {
-		defer close(readDone)
-		cr := missinggo.ContextedReader{R: r, Ctx: ctx}
-		var n int
-		n, readErr = io.ReadFull(cr, resp.Data)
-		if readErr == io.ErrUnexpectedEOF {
-			readErr = nil
+	n, err := torrentfs.ReadFile(ctx, me.fn.tfs, me.tf, resp.Data, req.Offset)
+	resp.Data = resp.Data[:n]
+	if err != nil {
+		if errors.Is(err, torrentfs.ErrDestroyed) {
+			return fuse.EIO //nolint:staticcheck
 		}
-		resp.Data = resp.Data[:n]
-	}()
-	defer func() {
-		<-readDone
-		doneFn()
-	}()
-	defer cancel()
-
-	select {
-	case <-readDone:
-		return readErr
-	case <-me.fn.tfs.Destroyed():
-		return fuse.EIO //nolint:staticcheck
-	case <-ctx.Done():
 		return fuse.EINTR //nolint:staticcheck
 	}
+	return nil
 }
 
 func (me fileHandle) Release(context.Context, *fuse.ReleaseRequest) error {
