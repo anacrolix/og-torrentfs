@@ -8,6 +8,7 @@ package ogtorrentfs
 import (
 	"context"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/anacrolix/fuse"
@@ -33,6 +34,11 @@ type mountedFS struct {
 
 func (m *mountedFS) Unmount() error {
 	err := fuse.Unmount(m.mountDir) //nolint:staticcheck
+	if err != nil {
+		// Clean unmount failed (e.g. EBUSY due to open file handles). Force-unmount
+		// so the FUSE device can be closed without leaving a zombie mount.
+		forceUnmount(m.mountDir)
+	}
 	m.conn.Close()
 	return err
 }
@@ -91,7 +97,7 @@ var (
 )
 
 func (rn rootNode) Attr(ctx context.Context, attr *fuse.Attr) error {
-	attr.Mode = 0o40000 | defaultMode // S_IFDIR
+	attr.Mode = os.ModeDir | defaultMode
 	return nil
 }
 
@@ -126,9 +132,7 @@ func (rn rootNode) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 	return des, nil
 }
 
-func (rn rootNode) Forget() {
-	rn.tfs.Destroy()
-}
+func (rn rootNode) Forget() {}
 
 // --- dirNode ---
 
@@ -139,7 +143,7 @@ type dirNode struct {
 var _ fusefs.HandleReadDirAller = dirNode{}
 
 func (dn dirNode) Attr(ctx context.Context, attr *fuse.Attr) error {
-	attr.Mode = 0o40000 | defaultMode
+	attr.Mode = os.ModeDir | defaultMode
 	return nil
 }
 
