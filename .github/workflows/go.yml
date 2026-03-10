@@ -49,12 +49,6 @@ jobs:
       - run: go mod download
         working-directory: og-torrentfs
 
-      - name: Test (Linux)
-        if: runner.os == 'Linux'
-        run: go test ./...
-        working-directory: og-torrentfs
-
-      - name: Test (macOS)
-        if: runner.os == 'macOS'
+      - name: Test
         run: go test -short -timeout 15m ./...
         working-directory: og-torrentfs
