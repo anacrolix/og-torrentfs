@@ -51,7 +51,10 @@ func (m *mountedFS) Unmount() error {
 		m.conn.Close()
 		return r.err
 	case <-time.After(3 * time.Second):
+		// Force-unmount to unblock the syscall.Unmount in the goroutine, then
+		// wait for it to exit so the process can terminate cleanly.
 		forceUnmount(m.mountDir)
+		<-ch
 		m.conn.Close()
 		return nil
 	}
