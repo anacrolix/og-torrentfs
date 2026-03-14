@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"time"
 
 	"github.com/anacrolix/fuse"
 	fusefs "github.com/anacrolix/fuse/fs"
@@ -31,14 +32,32 @@ type mountedFS struct {
 }
 
 func (m *mountedFS) Unmount() error {
-	err := fuse.Unmount(m.mountDir) //nolint:staticcheck
-	if err != nil {
-		// Clean unmount failed (e.g. EBUSY due to open file handles). Force-unmount
-		// so the FUSE device can be closed without leaving a zombie mount.
+	// Run the actual unmount in a goroutine with a timeout. On macOS with
+	// fuse-t the underlying syscall.Unmount can block indefinitely when there
+	// is a pending NFS read from user space. If it hasn't finished in 3s we
+	// force-unmount and close the connection so callers are never blocked.
+	type result struct{ err error }
+	ch := make(chan result, 1)
+	go func() {
+		err := fuse.Unmount(m.mountDir) //nolint:staticcheck
+		if err != nil {
+			forceUnmount(m.mountDir)
+		}
+		ch <- result{err}
+	}()
+
+	select {
+	case r := <-ch:
+		m.conn.Close()
+		return r.err
+	case <-time.After(3 * time.Second):
+		// Force-unmount to unblock the syscall.Unmount in the goroutine, then
+		// wait for it to exit so the process can terminate cleanly.
 		forceUnmount(m.mountDir)
+		<-ch
+		m.conn.Close()
+		return nil
 	}
-	m.conn.Close()
-	return err
 }
 
 // Mount mounts tfs at mountDir and returns an Unmounter.
