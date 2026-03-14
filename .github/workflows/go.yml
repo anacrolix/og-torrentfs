@@ -12,17 +12,7 @@ jobs:
         go-version: [stable, oldstable]
         os: [ubuntu-latest, macos-latest]
     steps:
-      - name: Checkout og-torrentfs
-        uses: actions/checkout@v4
-        with:
-          path: og-torrentfs
-
-      - name: Checkout torrent (torrentfs-refactor)
-        uses: actions/checkout@v4
-        with:
-          repository: anacrolix/torrent
-          ref: torrentfs-refactor
-          path: torrent
+      - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
@@ -36,25 +26,9 @@ jobs:
 
       - name: Install fuse-t (macOS)
         if: runner.os == 'macOS'
-        run: |
-          brew install macfuse fuse-t
-          echo 'FUSE_FORCE_BACKEND=fuse-t' >> $GITHUB_ENV
-
-      - name: Create workspace
-        run: |
-          go work init
-          go work use ./og-torrentfs
-          go work use ./torrent
+        run: brew install fuse-t
 
       - run: go mod download
-        working-directory: og-torrentfs
 
-      - name: Test (Linux)
-        if: runner.os == 'Linux'
-        run: go test ./...
-        working-directory: og-torrentfs
-
-      - name: Test (macOS)
-        if: runner.os == 'macOS'
+      - name: Test
         run: go test -short -timeout 15m ./...
-        working-directory: og-torrentfs
