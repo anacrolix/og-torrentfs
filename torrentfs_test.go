@@ -8,7 +8,7 @@ import (
 
 	ogtorrentfs "github.com/anacrolix/og-torrentfs"
 	torrentfs "github.com/anacrolix/torrent/fs"
-	"github.com/anacrolix/torrent/fs/torrentfstest"
+	"github.com/anacrolix/torrent/fs/tfstest"
 )
 
 func testMountFunc(t testing.TB, tfs *torrentfs.TorrentFS, mountDir string) (unmount func()) {
@@ -24,5 +24,5 @@ func testMountFunc(t testing.TB, tfs *torrentfs.TorrentFS, mountDir string) (unm
 }
 
 func TestTorrentFS(t *testing.T) {
-	torrentfstest.RunTestSuite(t, testMountFunc)
+	tfstest.RunTestSuite(t, testMountFunc)
 }
