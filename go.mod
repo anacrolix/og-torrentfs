@@ -10,7 +10,7 @@ require (
 	github.com/anacrolix/log v0.17.1-0.20251118025802-918f1157b7bb
 	github.com/anacrolix/missinggo/v2 v2.10.0
 	github.com/anacrolix/tagflag v1.3.0
-	github.com/anacrolix/torrent v1.61.1-0.20260311024126-ec0cc90cc8a3
+	github.com/anacrolix/torrent v1.61.1-0.20260315013448-6161b15552e0
 )
 
 require (
